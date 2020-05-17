@@ -1,67 +1,104 @@
-# toplevel CMakeLists.txt for a catkin workspace
-# catkin/cmake/toplevel.cmake
+cmake_minimum_required(VERSION 2.8.3)
+project(interbotix_sdk)
 
-cmake_minimum_required(VERSION 3.0.2)
+## Compile as C++11, supported in ROS Kinetic and newer
+add_compile_options(-std=c++11)
 
-set(CATKIN_TOPLEVEL TRUE)
-
-# search for catkin within the workspace
-set(_cmd "catkin_find_pkg" "catkin" "${CMAKE_SOURCE_DIR}")
-execute_process(COMMAND ${_cmd}
-  RESULT_VARIABLE _res
-  OUTPUT_VARIABLE _out
-  ERROR_VARIABLE _err
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-  ERROR_STRIP_TRAILING_WHITESPACE
+## Find catkin macros and libraries
+## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
+## is used, also find other catkin packages
+find_package(catkin REQUIRED COMPONENTS
+  actionlib
+  control_msgs
+  dynamixel_workbench_toolbox
+  interbotix_descriptions
+  message_generation
+  roscpp
+  sensor_msgs
+  std_msgs
+  std_srvs
+  trajectory_msgs
+  urdf
 )
-if(NOT _res EQUAL 0 AND NOT _res EQUAL 2)
-  # searching fot catkin resulted in an error
-  string(REPLACE ";" " " _cmd_str "${_cmd}")
-  message(FATAL_ERROR "Search for 'catkin' in workspace failed (${_cmd_str}): ${_err}")
-endif()
 
-# include catkin from workspace or via find_package()
-if(_res EQUAL 0)
-  set(catkin_EXTRAS_DIR "${CMAKE_SOURCE_DIR}/${_out}/cmake")
-  # include all.cmake without add_subdirectory to let it operate in same scope
-  include(${catkin_EXTRAS_DIR}/all.cmake NO_POLICY_SCOPE)
-  add_subdirectory("${_out}")
+## System dependencies are found with CMake's conventions
+# find_package(Boost REQUIRED COMPONENTS system)
 
-else()
-  # use either CMAKE_PREFIX_PATH explicitly passed to CMake as a command line argument
-  # or CMAKE_PREFIX_PATH from the environment
-  if(NOT DEFINED CMAKE_PREFIX_PATH)
-    if(NOT "$ENV{CMAKE_PREFIX_PATH}" STREQUAL "")
-      if(NOT WIN32)
-        string(REPLACE ":" ";" CMAKE_PREFIX_PATH $ENV{CMAKE_PREFIX_PATH})
-      else()
-        set(CMAKE_PREFIX_PATH $ENV{CMAKE_PREFIX_PATH})
-      endif()
-    endif()
-  endif()
+## Uncomment this if the package has a setup.py. This macro ensures
+## modules and global scripts declared therein get installed
+## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
+catkin_python_setup()
 
-  # list of catkin workspaces
-  set(catkin_search_path "")
-  foreach(path ${CMAKE_PREFIX_PATH})
-    if(EXISTS "${path}/.catkin")
-      list(FIND catkin_search_path ${path} _index)
-      if(_index EQUAL -1)
-        list(APPEND catkin_search_path ${path})
-      endif()
-    endif()
-  endforeach()
+# Resolve system dependency on yaml-cpp, which apparently does not
+# provide a CMake find_package() module.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(YAML_CPP REQUIRED yaml-cpp)
+find_path(YAML_CPP_INCLUDE_DIR
+  NAMES yaml_cpp.h
+  PATHS ${YAML_CPP_INCLUDE_DIRS}
+)
+find_library(YAML_CPP_LIBRARY
+  NAMES YAML_CPP
+  PATHS ${YAML_CPP_LIBRARY_DIRS}
+)
+link_directories(${YAML_CPP_LIBRARY_DIRS})
 
-  # search for catkin in all workspaces
-  set(CATKIN_TOPLEVEL_FIND_PACKAGE TRUE)
-  find_package(catkin QUIET
-    NO_POLICY_SCOPE
-    PATHS ${catkin_search_path}
-    NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
-  unset(CATKIN_TOPLEVEL_FIND_PACKAGE)
+if(NOT ${YAML_CPP_VERSION} VERSION_LESS "0.5")
+add_definitions(-DHAVE_NEW_YAMLCPP)
+endif(NOT ${YAML_CPP_VERSION} VERSION_LESS "0.5")
 
-  if(NOT catkin_FOUND)
-    message(FATAL_ERROR "find_package(catkin) failed. catkin was neither found in the workspace nor in the CMAKE_PREFIX_PATH. One reason may be that no ROS setup.sh was sourced before.")
-  endif()
-endif()
+################################################
+## Declare ROS messages, services and actions ##
+################################################
 
-catkin_workspace()
+## Generate messages in the 'msg' folder
+add_message_files(
+  FILES
+  JointCommands.msg
+  SingleCommand.msg
+)
+
+## Generate services in the 'srv' folder
+add_service_files(
+  FILES
+  FirmwareGains.srv
+  OperatingModes.srv
+  RegisterValues.srv
+  RobotInfo.srv
+)
+
+## Generate added messages and services with any dependencies listed here
+generate_messages(
+ DEPENDENCIES
+ std_msgs
+)
+
+###################################
+## catkin specific configuration ##
+###################################
+## The catkin_package macro generates cmake config files for your package
+## Declare things to be passed to dependent projects
+
+catkin_package(
+  INCLUDE_DIRS include
+  CATKIN_DEPENDS actionlib dynamixel_workbench_toolbox interbotix_descriptions message_runtime roscpp sensor_msgs std_msgs std_srvs trajectory_msgs urdf yaml-cpp
+)
+
+###########
+## Build ##
+###########
+
+## Specify additional locations of header files
+## Your package locations should be listed before other locations
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+  ${YAML_CPP_INCLUDE_DIRS}
+)
+
+## Declare a C++ executable
+## Specify libraries to link a library or executable target against
+## Add cmake target dependencies of the executable
+add_executable(arm_node src/arm_node.cpp src/arm_obj.cpp src/pid.cpp)
+target_link_libraries(arm_node ${catkin_LIBRARIES} ${YAML_CPP_LIBRARIES})
+add_dependencies(arm_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
